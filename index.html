@@ -62,6 +62,28 @@ h2{font-size:18px;margin:0 0 10px}
 .tg::after{content:"";position:absolute;top:3px;inset-inline-start:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s}
 .tg.on{background:var(--pri)}.tg.on::after{inset-inline-start:25px}
 .sw{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0 12px}
+.seg button{border:2px solid var(--line);background:var(--bg);color:var(--ink);border-radius:12px;padding:10px 4px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;min-height:48px}
+.seg button.on{color:#fff}.seg button.on.g{background:var(--ok);border-color:var(--ok)}.seg button.on.y{background:#c98a00;border-color:#c98a00}.seg button.on.r{background:var(--bad);border-color:var(--bad)}
+.seg button:focus-visible{outline:3px solid #ffb300;outline-offset:2px}
+.screen.sev-y{border-color:#ffb300;box-shadow:0 0 0 4px rgba(255,179,0,.4)}
+.screen.sev-r{border-color:#e53935;animation:ring .7s infinite}
+.flash{position:absolute;inset:0;background:rgba(229,57,53,.28);animation:pulse .7s infinite;pointer-events:none}
+.flash.y{background:rgba(255,179,0,.16);animation:pulse 2s infinite}
+.hl.g{border-color:#4dc8ff;box-shadow:0 0 18px #4dc8ff}.hl.y{border-color:#ffb300;box-shadow:0 0 18px #ffb300}.hl.r{border-color:#ff3b30;box-shadow:0 0 24px #ff3b30}
+.alert{border-radius:14px;padding:12px;margin-top:10px;font-weight:800;display:flex;gap:10px;align-items:center;border:2px solid}
+.alert .ic{font-size:30px}.alert small{display:block;font-weight:600}
+.alert.g{background:#dff5e8;color:#0a6b3b;border-color:#0f9d58}
+.alert.y{background:#fff3c4;color:#5e4200;border-color:#ffb300}
+.alert.r{background:#ffdad6;color:#8c1008;border-color:#d93025;animation:ring2 .7s infinite}
+.badge{position:absolute;top:6px;inset-inline-end:calc(50% - 22px);width:11px;height:11px;border-radius:50%;background:var(--bad);border:2px solid var(--card)}
+.nav button{position:relative}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kv div{background:var(--bg);border-radius:12px;padding:8px 10px}.kv small{display:block;color:var(--mut);font-size:12px}.kv b{font-size:16px}
+.map{width:100%;border-radius:14px;border:1px solid var(--line);display:block}
+.hosp{border-radius:18px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(180deg,#cfe4ff,#eaf3ff)}
+.hosp svg{display:block;width:100%}
+@keyframes ring{50%{box-shadow:0 0 0 9px rgba(229,57,53,.55)}}
+@keyframes ring2{50%{background:#ffb8b0}}
 .fade{animation:in .3s}
 @keyframes in{from{opacity:0;transform:translateY(8px)}}
 @keyframes pulse{50%{opacity:.45}}
@@ -78,53 +100,92 @@ h2{font-size:18px;margin:0 0 10px}
 </div>
 <nav class="nav"><div id="nav"></div></nav>
 <script>
-const S={tab:'home',scan:'idle',q:92,low:false,analysed:false,sub:null,opts:{sound:1,alerts:1,dark:0,saver:0,en:0}};
+const S={tab:'home',scan:'idle',q:92,low:false,analysed:false,sub:null,sev:'g',sent:false,ack:false,sentAt:'',opts:{sound:1,alerts:1,dark:0,saver:0,en:0}};
 const $=s=>document.querySelector(s);
-const tabs=[['home','🏠','الرئيسية'],['scan','📷','الفحص'],['vitals','❤️','المؤشرات'],['report','📄','التقرير'],['more','⚙️','المزيد']];
+const tabs=[['home','🏠','الرئيسية'],['scan','📷','الفحص'],['vitals','❤️','المؤشرات'],['hosp','🏥','المستشفى'],['report','📄','التقرير'],['more','⚙️','المزيد']];
+const SEV={g:{n:'طبيعي',ic:'🟢',t:'لا توجد مؤشرات تستدعي التنبيه',s:'يمكن المتابعة'},y:{n:'أصفر',ic:'🟡',t:'تنبيه أصفر: مؤشرات تستدعي الانتباه',s:'راجع المختص قريبًا'},r:{n:'أحمر',ic:'🔴',t:'تنبيه أحمر: مؤشرات حرجة محتملة',s:'إبلاغ المستشفى فورًا'}};
+const VIT={g:[82,97,36.8],y:[104,93,37.9],r:[128,86,38.6]};
+const MOTION={g:'منخفض',y:'متوسط',r:'مرتفع'};
+// Audio: soft chime for yellow, siren for red (simulated alerts, WebAudio)
+let AC,siren,sirenStop;
+function ctx(){try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();if(AC.state=='suspended')AC.resume()}catch(e){}return AC}
+function beep(f,d,v,type){const c=ctx();if(!c)return;const o=c.createOscillator(),g=c.createGain();o.type=type||'sine';o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d)}
+function vib(p){try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}}
+function stopAlarm(){clearInterval(siren);clearTimeout(sirenStop);siren=null;if(S.alarm){S.alarm=false}}
+function playAlert(sev){stopAlarm();if(sev=='y'){if(S.opts.sound){beep(660,.35,.1);setTimeout(()=>beep(880,.45,.1),230)}vib([120])}
+else if(sev=='r'){S.alarm=true;vib([300,150,300,150,300]);if(S.opts.sound){let k=0;beep(1040,.28,.3,'square');siren=setInterval(()=>{k++;beep(k%2?740:1040,.28,.3,'square')},320)}sirenStop=setTimeout(()=>{stopAlarm();if(S.tab=='scan')render()},20000)}}
+function sendCase(){S.sent=true;S.ack=false;S.sentAt=new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})}
 const hist=[['اليوم',92],['28 Sep',88],['20 Sep',94]];
 const fan=`<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><defs><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2"/><feColorMatrix values="0 0 0 0 .7 0 0 0 0 .8 0 0 0 0 .9 0 0 0 1.6 -.5"/></filter><radialGradient id="g" cx="50%" cy="0%" r="100%"><stop offset="0" stop-color="#6c8aa8"/><stop offset="1" stop-color="#0a1a2c"/></radialGradient><clipPath id="c"><path d="M200 8L40 290H360Z"/></clipPath></defs><g clip-path="url(#c)"><rect width="400" height="300" fill="url(#g)"/><ellipse cx="200" cy="140" rx="55" ry="38" fill="#02080f" opacity=".8"/><ellipse cx="200" cy="200" rx="90" ry="24" fill="#9db6cc" opacity=".25"/><rect width="400" height="300" filter="url(#n)" opacity=".55"/></g><path d="M200 8L40 290H360Z" fill="none" stroke="#4dc8ff" stroke-opacity=".5"/></svg>`;
 const dev=`<svg width="74" height="100" viewBox="0 0 74 100"><rect x="6" y="2" width="62" height="96" rx="16" fill="#e8f1ff"/><rect x="14" y="12" width="46" height="44" rx="8" fill="#03101f"/><path d="M37 16L22 52H52Z" fill="#4dc8ff" opacity=".6"/><circle cx="37" cy="74" r="10" fill="#0b5fd6"/><circle cx="37" cy="74" r="4" fill="#fff"/><rect x="24" y="88" width="26" height="4" rx="2" fill="#0b5fd6"/></svg>`;
-const factors=()=>S.low?[['الإضاءة',70],['وضوح الصورة',52],['ثبات الجهاز',38],['جودة الإشارة',60]]:[['الإضاءة',90],['وضوح الصورة',94],['ثبات الجهاز',91],['جودة الإشارة',93]];
+const FV={g:[90,94,91,93],y:[78,80,72,79],r:[66,72,61,70]};
+const FN=['الإضاءة','وضوح الصورة','ثبات الجهاز','جودة الإشارة'];
+const factors=()=>S.low?[['الإضاءة',70],['وضوح الصورة',52],['ثبات الجهاز',38],['جودة الإشارة',60]]:FN.map((n,i)=>[n,FV[S.sev][i]]);
+const Q=k=>Math.round(FV[k].reduce((a,b)=>a+b)/4);
+const QL={g:'ممتازة',y:'متوسطة',r:'ضعيفة نسبيًا'};
+const SIG={g:'جيدة',y:'متوسطة',r:'ضعيفة'};
 const qbar=v=>`<div class="bar ${v<70?'low':''}"><i style="width:${v}%"></i></div>`;
-function screen(extra=''){return `<div class="screen ${S.scan=='scanning'||S.scan=='analyzing'?'busy':''}">${fan}<div class="beam"></div><div class="hl ${S.analysed&&!S.low?'on':''}"></div><span class="tag">${S.scan=='idle'?'منطقة المسح جاهزة':'صورة تجريبية'}</span>${extra}</div>`}
+function screen(extra=''){const sv=S.analysed&&S.scan=='done'?S.sev:'g',show=S.analysed&&S.scan=='done';return `<div class="screen ${S.scan=='scanning'||S.scan=='analyzing'?'busy':''} ${show&&sv!='g'?'sev-'+sv:''}">${fan}<div class="beam"></div>${show&&sv!='g'?`<div class="flash ${sv}"></div>`:''}<div class="hl ${sv} ${show&&!S.low?'on':''}"></div><span class="tag">${show?SEV[sv].ic+' '+SEV[sv].n:S.scan=='idle'?'منطقة المسح جاهزة':'صورة تجريبية'}</span>${extra}</div>`}
+const sevPick=()=>`<b style="font-size:14px">حالة الفحص (محاكاة)</b><div class="seg" role="group" aria-label="حالة الفحص">${['g','y','r'].map(k=>`<button class="${k} ${S.sev==k?'on':''}" data-sev="${k}" aria-pressed="${S.sev==k}">${SEV[k].ic} ${SEV[k].n}</button>`).join('')}</div>`;
+const alertBox=k=>`<div class="alert ${k}" role="alert"><span class="ic">${SEV[k].ic}</span><span>${SEV[k].t}<small>${SEV[k].s}</small></span></div>`;
 function home(){return `<div class="device">${dev}<div><h3>Smart Rescue Scanner</h3><small>جهاز تصوير محمول للطوارئ</small><br><span class="pill ok" style="margin-top:6px"><span class="dot"></span> الجهاز جاهز</span></div></div>
-<div class="card"><div class="stat"><div><b>92%</b><span>🔋 البطارية</span></div><div><b style="font-size:15px;padding:3px 0">بدون إنترنت</b><span>📶 الاتصال</span></div><div><b style="font-size:17px;padding:2px 0">ممتازة</b><span>جودة الصورة</span></div></div></div>
+<div class="card"><div class="stat"><div><b>92%</b><span>🔋 البطارية</span></div><div><b style="font-size:15px;padding:3px 0">بدون إنترنت</b><span>📶 الاتصال</span></div><div><b style="font-size:17px;padding:2px 0">${QL[curSev()]}</b><span>جودة الصورة</span></div></div></div>
 <div class="grid"><button class="btn" data-go="scan" data-act="capture">📷 التقاط صورة</button><button class="btn" data-go="scan">🩺 بدء الفحص</button><button class="btn alt" data-go="scan" data-act="analyze">📊 تحليل الصورة</button><button class="btn alt" data-go="report">📄 التقرير</button></div>
 <div class="card"><h2>🚨 وضع الطوارئ</h2>${env()}</div>`}
 function env(){return `<div class="grid" style="gap:8px;font-weight:600"><div class="guide">🌑 الإضاءة: منخفضة</div><div class="guide">🌫️ الغبار: متوسط</div><div class="guide">📳 الاهتزاز: مرتفع</div><div class="guide">📶 الإنترنت: غير متوفر</div></div><p class="pill ok" style="margin:12px 0 0">✅ تم تفعيل الوضع المتكيف</p><small style="display:block;color:var(--mut)">تعديل تلقائي للسطوع والتباين وتثبيت الصورة (محاكاة).</small>`}
 function scan(){
 let h=`<div class="card">${screen()}`;
 const sc=S.scan;
-if(sc=='idle')h+=`<p>جودة الصورة: <b>ممتازة</b></p><button class="btn" data-act="capture">📷 التقاط الصورة</button><label class="sw" style="border:0"><span>محاكاة جودة منخفضة</span><button class="tg ${S.low?'on':''}" data-act="lowtoggle" aria-label="محاكاة جودة منخفضة"></button></label>`;
+if(sc=='idle')h+=`<p>جودة الصورة: <b>${QL[S.sev]}</b></p>${sevPick()}<button class="btn" data-act="capture">📷 التقاط الصورة</button><label class="sw" style="border:0"><span>محاكاة جودة منخفضة</span><button class="tg ${S.low?'on':''}" data-act="lowtoggle" aria-label="محاكاة جودة منخفضة"></button></label>`;
 if(sc=='scanning')h+=`<p><b>جاري المسح...</b></p>`;
-if(sc=='captured')h+=`<p class="pill ok">✅ تم التقاط الصورة بنجاح</p>${qcard()}`+(S.low?`<button class="btn" data-act="retake">🔄 إعادة التصوير</button>`:`<div class="grid"><button class="btn" data-act="analyze">📊 تحليل الصورة</button><button class="btn alt" data-act="retake">🔄 إعادة التصوير</button></div>`);
+if(sc=='captured')h+=`<p class="pill ok">✅ تم التقاط الصورة بنجاح</p>${qcard()}${S.low?'':sevPick()}`+(S.low?`<button class="btn" data-act="retake">🔄 إعادة التصوير</button>`:`<div class="grid"><button class="btn" data-act="analyze">📊 تحليل الصورة</button><button class="btn alt" data-act="retake">🔄 إعادة التصوير</button></div>`);
 if(sc=='analyzing')h+=`<p><b>جاري تحليل الصورة...</b></p>`;
-if(sc=='done')h+=`<p class="pill ok">🟢 الصورة صالحة للتحليل</p>
-<div class="stat" style="margin:10px 0"><div><b>92%</b><span>جودة الصورة</span></div><div><b style="font-size:17px">منخفض</b><span>مستوى الحركة</span></div><div><b style="font-size:17px">جيدة</b><span>جودة الإشارة</span></div></div>
-<p style="margin:6px 0"><b>مؤشرات تحليلية أولية</b> — المنطقة المظللة بالأصفر تظهر مثالًا لتحديد منطقة اهتمام (محاكاة).</p><p class="pill wr">ينبغي مراجعة النتيجة بواسطة مختص.</p>`;
+if(sc=='done'){const k=S.sev;h+=`<p class="pill ok">🟢 الصورة صالحة للتحليل</p>${alertBox(k)}
+${S.alarm?`<button class="btn" style="margin-top:10px;background:var(--bad)" data-act="stopalarm">🔕 إيقاف الإنذار</button>`:''}
+<div class="stat" style="margin:10px 0"><div><b>${Q(k)}%</b><span>جودة الصورة</span></div><div><b style="font-size:17px">${MOTION[k]}</b><span>مستوى الحركة</span></div><div><b style="font-size:17px">${SIG[k]}</b><span>جودة الإشارة</span></div></div>
+<p style="margin:6px 0"><b>مؤشرات تحليلية أولية</b> — المنطقة المظللة تظهر مثالًا لتحديد منطقة اهتمام (محاكاة).</p><p class="pill wr">ينبغي مراجعة النتيجة بواسطة مختص.</p>
+${k!='g'?(S.sent?`<p class="pill ok" style="margin-top:8px">📡 تم إرسال الحالة إلى المستشفى ${k=='r'?'تلقائيًا':''}</p><button class="btn alt" data-go="hosp">🏥 عرض في المستشفى</button>`:`<button class="btn" style="margin-top:8px" data-act="send">📡 إرسال الحالة إلى المستشفى</button>`):''}`}
 h+=`</div>`;
-if(sc=='done'){h+=`<div class="card"><h2>📍 إرشادات للمستخدم</h2><div class="guide">📍 الإشارة جيدة، يمكن المتابعة</div><div class="guide">📍 ثبّت الجهاز</div><div class="guide">📍 غيّر زاوية الجهاز قليلًا</div></div><div class="grid"><button class="btn" data-go="vitals">❤️ عرض القياسات</button><button class="btn" data-go="report">📄 إنشاء التقرير</button></div>`}
+if(sc=='done'){h+=`<div class="card"><h2>📍 إرشادات للمستخدم</h2><div class="guide">📍 الإشارة جيدة، يمكن المتابعة</div><div class="guide">📍 ثبّت الجهاز</div><div class="guide">📍 غيّر زاوية الجهاز قليلًا</div></div><div class="grid"><button class="btn" data-go="vitals">❤️ عرض القياسات</button><button class="btn" data-go="report">📄 إنشاء التقرير</button></div><button class="btn alt" style="margin-top:10px" data-act="retake">🔄 فحص جديد</button>`}
 if(sc=='captured'&&S.low)h+=`<div class="card"><div class="guide">📍 أعد التصوير للحصول على صورة أوضح</div></div>`;
 return h}
-function qcard(){const q=S.low?54:92;return `<div style="margin:10px 0"><h2 style="margin:0">فحص جودة الصورة</h2><p class="pill ${S.low?'wr':'ok'}">${S.low?'🟠 جودة الصورة غير كافية':'🟢 جودة الصورة: '+q+'%'}</p>${S.low?'<p>حاول تثبيت الجهاز وتحسين موضع التصوير.</p>':''}${factors().map(f=>`<div class="fac"><span>${f[0]}</span><b>${f[1]}%</b></div>${qbar(f[1])}`).join('')}</div>`}
-function vitals(){return `<p class="pill wr">بيانات تجريبية</p><div class="vit"><div class="card"><span class="ic">❤️</span><div><small>Heart Rate</small><div class="big">82 <small>BPM</small></div></div></div><div class="card"><span class="ic">🫁</span><div><small>Oxygen</small><div class="big">97%</div></div></div><div class="card"><span class="ic">🌡️</span><div><small>Temperature</small><div class="big">36.8°C</div></div></div></div><p style="color:var(--mut);font-size:13px">لا تتضمن هذه الشاشة تشخيصًا أو توصيات علاجية.</p><button class="btn" data-go="report">📄 إنشاء التقرير</button>`}
-function repBody(d,q,st){return `<dl class="rep"><h2>Emergency Scan Report</h2><dt>Patient</dt><dd>حالة تجريبية</dd><dt>Date</dt><dd>${d}</dd><dt>Image Quality</dt><dd>${q}%</dd><dt>Analysis Status</dt><dd>${st}</dd><dt>Measurements</dt><dd>Heart Rate: 82 BPM<br>Oxygen: 97%</dd><dt>AI Notes</dt><dd>"مؤشرات تحليلية أولية — تحتاج إلى مراجعة مختص."</dd></dl>`}
-function report(){return `<div class="card">${repBody(S.sub?S.sub[0]:'01 / 10 / 2026',S.sub?S.sub[1]:92,'صالحة للتحليل')}<div class="grid" style="margin-top:10px"><button class="btn" data-act="view">👁️ عرض التقرير</button><button class="btn alt" data-act="print">🖨️ طباعة التقرير</button></div></div>`}
+function qcard(){const q=S.low?54:Q(S.sev);return `<div style="margin:10px 0"><h2 style="margin:0">فحص جودة الصورة</h2><p class="pill ${S.low||S.sev!='g'?'wr':'ok'}">${S.low?'🟠 جودة الصورة غير كافية':SEV[S.sev].ic+' جودة الصورة: '+q+'%'}</p>${S.low?'<p>حاول تثبيت الجهاز وتحسين موضع التصوير.</p>':''}${factors().map(f=>`<div class="fac"><span>${f[0]}</span><b>${f[1]}%</b></div>${qbar(f[1])}`).join('')}</div>`}
+const curSev=()=>S.analysed?S.sev:'g';
+function vitals(){const v=VIT[curSev()];return `<p class="pill wr">بيانات تجريبية</p><div class="vit"><div class="card"><span class="ic">❤️</span><div><small>Heart Rate</small><div class="big">${v[0]} <small>BPM</small></div></div></div><div class="card"><span class="ic">🫁</span><div><small>Oxygen</small><div class="big">${v[1]}%</div></div></div><div class="card"><span class="ic">🌡️</span><div><small>Temperature</small><div class="big">${v[2]}°C</div></div></div></div><p style="color:var(--mut);font-size:13px">لا تتضمن هذه الشاشة تشخيصًا أو توصيات علاجية.</p><button class="btn" data-go="report">📄 إنشاء التقرير</button>`}
+function repBody(d,q,st,k='g'){const v=VIT[k];return `<dl class="rep"><h2>Emergency Scan Report</h2><dt>Patient</dt><dd>حالة تجريبية</dd><dt>Date</dt><dd>${d}</dd><dt>Image Quality</dt><dd>${q}%</dd><dt>Analysis Status</dt><dd>${st}</dd><dt>Alert Level</dt><dd>${SEV[k].ic} ${SEV[k].n}</dd><dt>Measurements</dt><dd>Heart Rate: ${v[0]} BPM<br>Oxygen: ${v[1]}%</dd><dt>AI Notes</dt><dd>"مؤشرات تحليلية أولية — تحتاج إلى مراجعة مختص."</dd></dl>`}
+function report(){return `<div class="card">${repBody(S.sub?S.sub[0]:'01 / 10 / 2026',S.sub?S.sub[1]:Q(curSev()),'صالحة للتحليل',S.sub?'g':curSev())}<div class="grid" style="margin-top:10px"><button class="btn" data-act="view">👁️ عرض التقرير</button><button class="btn alt" data-act="print">🖨️ طباعة التقرير</button></div></div>`}
 function more(){const o=S.opts,t=(k,l)=>`<div class="sw"><span>${l}</span><button class="tg ${o[k]?'on':''}" data-opt="${k}" aria-label="${l}"></button></div>`;
 return `<div class="card"><h2>🕘 Previous Scans</h2>${hist.map((h,i)=>`<button class="row" data-hist="${i}"><span>${h[0]} — جودة ${h[1]}%</span><span>←</span></button>`).join('')}</div>
 <div class="card"><h2>إعدادات الجهاز</h2>${t('sound','🔊 الصوت')}${t('alerts','🔔 التنبيهات')}${t('dark','🌙 الوضع الداكن')}${t('saver','🔋 توفير البطارية')}${t('en','🌐 اللغة: '+(o.en?'English':'العربية'))}<p style="margin:10px 0 0">Battery: 92%<br><span dir="ltr">Device: Smart Rescue Scanner</span></p></div>`}
-const R={home,scan,vitals,report,more};
-function render(){$('#view').innerHTML='<div class="fade">'+R[S.tab]()+'</div>';$('#nav').innerHTML=tabs.map(t=>`<button class="${S.tab==t[0]?'on':''}" data-go="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join('')}
+const hospSvg=k=>`<svg viewBox="0 0 400 190" role="img" aria-label="رسم توضيحي لمبنى المستشفى"><rect y="150" width="400" height="40" fill="#8fa3bd"/><rect y="168" width="400" height="3" fill="#fff" opacity=".6" stroke-dasharray="14 10"/><rect x="60" y="40" width="200" height="112" rx="6" fill="#fff" stroke="#0b5fd6" stroke-width="3"/><rect x="20" y="78" width="46" height="74" rx="4" fill="#e3eeff" stroke="#0b5fd6" stroke-width="3"/><rect x="254" y="78" width="46" height="74" rx="4" fill="#e3eeff" stroke="#0b5fd6" stroke-width="3"/><rect x="132" y="8" width="56" height="34" rx="6" fill="#0b5fd6"/><path d="M160 14v22M149 25h22" stroke="#fff" stroke-width="7" stroke-linecap="round"/>${[76,112,148,184,220].map(x=>`<rect x="${x}" y="58" width="22" height="20" rx="3" fill="#9cc4ff"/><rect x="${x}" y="90" width="22" height="20" rx="3" fill="#9cc4ff"/>`).join('')}<rect x="142" y="112" width="36" height="40" rx="4" fill="#0b5fd6"/><text x="160" y="136" font-size="13" font-weight="800" fill="#fff" text-anchor="middle">ER</text><g><rect x="298" y="132" width="78" height="30" rx="7" fill="#fff" stroke="#44546b" stroke-width="2"/><rect x="346" y="126" width="22" height="14" rx="3" fill="#9cc4ff"/><path d="M320 140v14M313 147h14" stroke="#d93025" stroke-width="5"/><circle cx="314" cy="164" r="7" fill="#222"/><circle cx="360" cy="164" r="7" fill="#222"/><rect x="326" y="121" width="16" height="8" rx="3" fill="${k=='r'?'#ff3b30':k=='y'?'#ffb300':'#0f9d58'}"><animate attributeName="opacity" values="1;.2;1" dur=".8s" repeatCount="indefinite"/></rect></g></svg>`;
+const mapSvg=k=>`<svg class="map" viewBox="0 0 400 210" role="img" aria-label="خريطة تجريبية لموقع الحالة والمستشفى"><rect width="400" height="210" style="fill:var(--bg)"/><g stroke="#aebfd6" stroke-width="10" fill="none" stroke-linecap="round"><path d="M0 150H400"/><path d="M0 60H400"/><path d="M90 0V210"/><path d="M230 0V210"/><path d="M330 0V210"/></g><g stroke="var(--card)" stroke-width="5" fill="none"><path d="M0 150H400"/><path d="M0 60H400"/><path d="M90 0V210"/><path d="M230 0V210"/><path d="M330 0V210"/></g><path d="M90 150H230V60H330" fill="none" stroke="#0b5fd6" stroke-width="5" stroke-dasharray="9 7" stroke-linecap="round"/><g transform="translate(90 150)"><circle r="18" fill="${k=='r'?'#d93025':k=='y'?'#e0a000':'#0f9d58'}" opacity=".25"><animate attributeName="r" values="12;24;12" dur="1.6s" repeatCount="indefinite"/></circle><circle r="9" fill="${k=='r'?'#d93025':k=='y'?'#e0a000':'#0f9d58'}" stroke="#fff" stroke-width="3"/></g><g transform="translate(330 60)"><rect x="-16" y="-16" width="32" height="32" rx="8" fill="#0b5fd6" stroke="#fff" stroke-width="3"/><path d="M0-8v16M-8 0h16" stroke="#fff" stroke-width="4" stroke-linecap="round"/></g><text x="90" y="186" font-size="12" font-weight="700" text-anchor="middle" style="fill:var(--ink)">موقع الجهاز</text><text x="330" y="38" font-size="12" font-weight="700" text-anchor="middle" style="fill:var(--ink)">المستشفى</text></svg>`;
+function hosp(){
+if(!S.sent)return `<div class="hosp">${hospSvg('g')}</div><div class="card"><h2>🏥 مركز استقبال الطوارئ</h2><p class="pill wr">في انتظار حالة واردة</p><p style="color:var(--mut)">عند إرسال حالة من الجهاز تظهر هنا بياناتها كاملة وموقعها. الحالة الحمراء تُرسل تلقائيًا، والصفراء بزر الإرسال.</p><button class="btn" data-act="demo">🚨 تشغيل مثال: حالة حمراء</button></div>`;
+const k=S.sev,v=VIT[k];
+return `<div class="alert ${k}" role="alert"><span class="ic">${SEV[k].ic}</span><span>حالة واردة — ${SEV[k].n}<small>${SEV[k].t}</small></span></div>
+<div class="hosp" style="margin-top:12px">${hospSvg(k)}</div>
+<div class="card"><h2>📋 بيانات الحالة</h2><div class="kv"><div><small>رقم الحالة</small><b dir="ltr">RS-1041</b></div><div><small>وقت الاستلام</small><b>${S.sentAt}</b></div><div><small>المريض</small><b>حالة تجريبية</b></div><div><small>مستوى التنبيه</small><b>${SEV[k].ic} ${SEV[k].n}</b></div><div><small>❤️ النبض</small><b>${v[0]} BPM</b></div><div><small>🫁 الأكسجين</small><b>${v[1]}%</b></div><div><small>🌡️ الحرارة</small><b>${v[2]}°C</b></div><div><small>جودة الصورة</small><b>${Q(k)}%</b></div><div><small>مستوى الحركة</small><b>${MOTION[k]}</b></div><div><small>الجهاز</small><b dir="ltr">Smart Rescue Scanner</b></div></div>
+<p style="margin:10px 0 0;font-size:13px;color:var(--mut)">أُرسلت عبر شبكة الطوارئ الاحتياطية (محاكاة). مؤشرات أولية تحتاج مراجعة مختص.</p></div>
+<div class="card"><h2>📍 موقع الحالة</h2>${mapSvg(k)}<div class="kv" style="margin-top:10px"><div><small>الإحداثيات (GPS)</small><b dir="ltr" style="font-size:12.5px;white-space:nowrap">30.0561° N, 31.3300° E</b></div><div><small>العنوان</small><b style="font-size:14px">طريق الإسماعيلية الصحراوي، كم 32</b></div><div><small>المسافة</small><b>7.4 كم</b></div><div><small>الوصول المتوقع</small><b>11 دقيقة</b></div></div><p style="margin:8px 0 0;font-size:12px;color:var(--mut)">الموقع والخريطة بيانات تجريبية.</p></div>
+${S.ack?`<p class="pill ok" style="font-size:16px">✅ تم الاستلام — الفريق الطبي جاهز للاستقبال</p>`:`<button class="btn" data-act="ack">✅ تأكيد استلام الحالة</button>`}`}
+const R={home,scan,vitals,hosp,report,more};
+function render(){$('#view').innerHTML='<div class="fade">'+R[S.tab]()+'</div>';$('#nav').innerHTML=tabs.map(t=>`<button class="${S.tab==t[0]?'on':''}" data-go="${t[0]}"><span>${t[1]}</span>${t[2]}${t[0]=='hosp'&&S.sent&&!S.ack?'<i class="badge" aria-label="حالة جديدة"></i>':''}</button>`).join('')}
 let timer;
 function act(a){
 if(a=='capture'){S.tab='scan';S.scan='scanning';S.analysed=false;render();clearTimeout(timer);timer=setTimeout(()=>{S.scan='captured';render()},1800)}
-else if(a=='retake'){S.scan='idle';S.low=false;S.analysed=false;render()}
+else if(a=='retake'){stopAlarm();S.scan='idle';S.low=false;S.analysed=false;S.sent=false;S.ack=false;render()}
+else if(a=='stopalarm'){stopAlarm();render()}
+else if(a=='send'){sendCase();render()}
+else if(a=='ack'){stopAlarm();S.ack=true;render()}
+else if(a=='demo'){stopAlarm();S.sev='r';S.scan='done';S.analysed=true;sendCase();render()}
 else if(a=='lowtoggle'){S.low=!S.low;render()}
-else if(a=='analyze'){if(S.scan!='captured'){S.tab='scan';S.scan='idle';render();return}S.scan='analyzing';render();clearTimeout(timer);timer=setTimeout(()=>{S.scan='done';S.analysed=true;render()},2200)}
+else if(a=='analyze'){if(S.scan!='captured'){S.tab='scan';S.scan='idle';render();return}S.scan='analyzing';render();clearTimeout(timer);timer=setTimeout(()=>{S.scan='done';S.analysed=true;S.sent=false;S.ack=false;if(S.sev=='r')sendCase();if(S.sev!='g'&&S.opts.alerts)playAlert(S.sev);render()},2200)}
 else if(a=='view'){window.scrollTo({top:0,behavior:'smooth'})}
 else if(a=='print'){window.print()}}
 document.addEventListener('click',e=>{
-const el=e.target.closest('[data-go],[data-act],[data-opt],[data-hist]');if(!el)return;
+ctx();
+const el=e.target.closest('[data-go],[data-act],[data-opt],[data-hist],[data-sev]');if(!el)return;
+if(el.dataset.sev){S.sev=el.dataset.sev;if(S.sev=='y'&&S.opts.sound)beep(660,.3,.08);render();return}
 if(el.dataset.go){if(el.dataset.go!='report')S.sub=null;S.tab=el.dataset.go;if(S.tab=='scan'&&!el.dataset.act&&S.scan=='done'){}render();window.scrollTo(0,0)}
 if(el.dataset.act)act(el.dataset.act);
 if(el.dataset.opt){const k=el.dataset.opt;S.opts[k]=S.opts[k]?0:1;if(k=='dark')document.documentElement.dataset.theme=S.opts.dark?'dark':'light';if(k=='en'){document.documentElement.lang=S.opts.en?'en':'ar'}render()}
